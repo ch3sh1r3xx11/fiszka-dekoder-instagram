@@ -36,6 +36,12 @@ Otagowanie tekstu (potrzebna lokalna [Ollama](https://ollama.com) z EmbeddingGem
 python dekoder.py zrzut*.png --tekst "Tytuł artykułu | treść artykułu"
 ```
 
+Pokaz z kolorami i porównaniem z oryginałem na tekstach z bloga labu:
+
+```bash
+python dekoder.py zrzut*.png --pokaz --demo
+```
+
 Sam model to 15 linii (`fiszka()` w `dekoder.py`): trzy warstwy ReLU 768→256→128→64, wyjście na 17 tematów
 plus połączenie skrótowe z wejścia, sigmoida. Temat, gdy pewność ≥ 0,5, najwyżej 3.
 

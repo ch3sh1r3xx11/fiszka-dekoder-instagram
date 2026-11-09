@@ -15,10 +15,13 @@ Korekcji błędów nie ma — to dowód koncepcji: na prawdziwym zrzucie z iPhon
 Licencja kodu: MIT. Projekt: https://aipoclab.creativeaidrivenpm.com/fiszka
 """
 import argparse
+import base64
 import json
 import math
+import os
 import struct
 import sys
+import time
 import urllib.request
 
 import numpy as np
@@ -185,13 +188,79 @@ def wektor_ollama(tekst, model="embeddinggemma-2:270m", adres="http://127.0.0.1:
     return np.array(json.load(urllib.request.urlopen(req, timeout=120))["embeddings"][0], dtype=np.float64)
 
 
+# ── tryb pokazowy (--pokaz): to samo, tylko widać, co się dzieje ─────────────────────────────────
+F, B, T, S, R = "[38;2;232;26;122m", "[38;2;67;188;249m", "[38;2;116;251;242m", "[38;2;127;147;168m", "[0m"
+CYFRY_BLOKI = {
+    "2": ["█████", "    █", "█████", "█    ", "█████"], "5": ["█████", "█    ", "█████", "    █", "█████"],
+    "1": ["  █  ", " ██  ", "  █  ", "  █  ", " ███ "], "9": ["█████", "█   █", "█████", "    █", "█████"],
+    "4": ["█   █", "█   █", "█████", "    █", "    █"], " ": ["  ", "  ", "  ", "  ", "  "],
+}
+
+
+def wolno(t, s=0.0):
+    print(t, flush=True)
+    time.sleep(s)
+
+
+def baner():
+    wolno(f"\n{F}█▀▀ █ █▀ ▀█ █▄▀ ▄▀█{R}   {B}DEKODER INSTAGRAMA{R}", 0.25)
+    wolno(f"{F}█▀  █ ▄█ █▄ █ █ █▀█{R}   {S}model AI ze zrzutów ekranu · aipoc lab{R}\n", 0.6)
+
+
+def pokaz_kafel(p, nr, start, w):
+    kol = F if nr % 2 else B
+    wolno(f"{kol}▸ kafel {nr}/6{R}  cyfra {kol}{CYFRY[nr - 1]}{R}  {S}{os.path.basename(p)}{R}", 0.3)
+    for i in range(0, 31):
+        pasek = "█" * i + "░" * (30 - i)
+        print(f"\r  czytam kropki {kol}{pasek}{R} {int(ROWS * COLS * i / 30):>7,} / {ROWS * COLS:,}".replace(",", " "), end="", flush=True)
+        time.sleep(0.04)
+    print()
+    pol = (POZIOMY - 1) / 2
+    for r in range(6):
+        probka = " ".join(f"{(v - pol) / pol:+.2f}" for v in w[r * 9:(r + 1) * 9])
+        wolno(f"  {S}wagi{R} {kol}{probka}{R}", 0.08)
+    wolno(f"  {T}✓ {w.size:,} wag odczytanych{R}  {S}(od {start + 1:,}){R}\n".replace(",", " "), 0.4)
+
+
+def pokaz_liczbe():
+    for wiersz in range(5):
+        linia = ""
+        for i, z in enumerate("252 194"):
+            kol = (B if i % 2 == 0 else F) if z != " " else ""
+            linia += f"{kol}{CYFRY_BLOKI[z][wiersz]}{R} "
+        wolno("  " + linia, 0.12)
+    print()
+
+
+def demo(model):
+    """Dwa teksty dnia ze strony Fiszki: tematy z modelu z Instagrama obok oryginału."""
+    d = json.load(urllib.request.urlopen(urllib.request.Request(
+        "https://aipoclab.creativeaidrivenpm.com/api/siec-fiszki", headers={"User-Agent": "fiszka-dekoder"}), timeout=60))
+    f = lambda x: np.frombuffer(base64.b64decode(x), dtype=np.float32).astype(np.float64) if isinstance(x, str) else np.array(x)
+    oryg = dict(zip(NAZWY, [f(x[k]).reshape(s) for x in d["wagi"] for k in ("W", "b") for s in [None]][:0] or
+                [f(x[k]).reshape(s) for (x, k), s in zip([(x, k) for x in d["wagi"] for k in ("W", "b")], KSZTALTY)]))
+    top = lambda p: [TEMATY[i] for i in np.argsort(-p)[:3] if p[i] >= 0.5]
+    wolno(f"{S}test na tekstach z bloga (oryginał: wagi z serwera labu){R}", 0.3)
+    for t in d["teksty"]:
+        x = f(t["wektor"])
+        a, b = top(fiszka(model, x)), top(fiszka(oryg, x))
+        znak = f"{T}✓{R}" if a == b else f"{F}≈{R}"
+        wolno(f"  {znak} {t.get('tytul_pl') or t['tytul']}"[:110], 0.2)
+        wolno(f"     {B}z Instagrama:{R} {', '.join(a) or '—'}   {S}oryginał:{R} {', '.join(b) or '—'}", 0.5)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Fiszka z Instagrama: model AI ze zrzutów ekranu")
     ap.add_argument("zrzuty", nargs="+")
     ap.add_argument("--wyjscie", default="fiszka_z_instagrama.npz")
     ap.add_argument("--tekst", help="otaguj tekst „tytuł | treść” (wymaga Ollamy z EmbeddingGemma 2)")
     ap.add_argument("--model-wektorow", default="embeddinggemma-2:270m", help="nazwa EmbeddingGemma w Twojej Ollamie")
+    ap.add_argument("--pokaz", action="store_true", help="tryb pokazowy: kolory, pasek, przewijane wagi")
+    ap.add_argument("--demo", action="store_true", help="porównaj tematy z oryginałem na tekstach z bloga labu")
     a = ap.parse_args()
+    if a.pokaz:
+        os.system("")          # Windows: włącz kolory ANSI w konsoli
+        baner()
     w, skale, mam = None, None, []
     for p in a.zrzuty:
         nr, razem, start, czesc, skale = dekoduj_kafel(Image.open(p))
@@ -199,12 +268,24 @@ def main():
             w = np.full(razem, (POZIOMY - 1) // 2, dtype=np.uint8)
         w[start:start + czesc.size] = czesc
         mam.append(nr)
-        print(f"{p}: kafel {nr}/6 (cyfra {CYFRY[nr - 1]}), wagi {start + 1}–{start + czesc.size}")
+        if a.pokaz:
+            pokaz_kafel(p, nr, start, czesc)
+        else:
+            print(f"{p}: kafel {nr}/6 (cyfra {CYFRY[nr - 1]}), wagi {start + 1}–{start + czesc.size}")
     brak = sorted(set(range(1, 7)) - set(mam))
-    print("brakuje kafli:", brak or "żadnego", "— brakujące wagi = 0" if brak else "")
     model = odkwantyzuj(w, skale)
     np.savez(a.wyjscie, **model)
-    print("model zapisany:", a.wyjscie, f"({sum(v.size for v in model.values())} parametrów)")
+    if a.pokaz:
+        pokaz_liczbe()
+        wolno(f"  {T}model złożony:{R} {len(set(mam))} z 6 kafli · {sum(v.size for v in model.values()):,} parametrów".replace(",", " "), 0.2)
+        if brak:
+            wolno(f"  {S}czekamy na kafle {', '.join(map(str, brak))} — do tego czasu ich wagi = 0{R}", 0.2)
+        wolno(f"  {S}zapisany:{R} {a.wyjscie}\n", 0.3)
+    else:
+        print("brakuje kafli:", brak or "żadnego", "— brakujące wagi = 0" if brak else "")
+        print("model zapisany:", a.wyjscie, f"({sum(v.size for v in model.values())} parametrów)")
+    if a.demo:
+        demo(model)
     if a.tekst:
         p = fiszka(model, wektor_ollama(a.tekst, a.model_wektorow))
         top = [(TEMATY[i], round(float(p[i]), 2)) for i in np.argsort(-p)[:3] if p[i] >= 0.5]
